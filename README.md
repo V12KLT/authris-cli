@@ -26,6 +26,7 @@ go build -o authris .
 
 ```
 authris login --server https://your-server
+authris
 authris status
 authris keys
 authris keys myproject
@@ -39,10 +40,10 @@ Tokens come from Dashboard > AI Access > Personal tokens. They are stored with `
 
 ## Agent
 
-`authris ai` is a coding agent for your project. It reads and edits files where
-you run it, runs install and test commands, and manages your Authris account
-through the same assistant as the dashboard. Reads run freely; writes, edits,
-and commands ask first unless you allow them.
+`authris ai` (or just `authris`) is a coding agent for your project. It reads
+and edits files where you run it, runs install and test commands, and manages
+your Authris account through the same assistant as the dashboard. Reads run
+freely; writes, edits, and commands ask first unless you allow them.
 
 ```
 authris ai "add authris licensing to this project"

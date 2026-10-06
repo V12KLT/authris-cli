@@ -407,22 +407,25 @@ func printChatReply(payload map[string]any, announced *bool) []map[string]any {
 				}
 			}
 		}
-		fmt.Printf("acting with scopes: %s\n", strings.Join(scopes, " "))
+		fmt.Println(dim("acting with scopes: " + strings.Join(scopes, " ")))
+		fmt.Println()
 		*announced = true
 	}
 	if reply, _ := payload["reply"].(string); strings.TrimSpace(reply) != "" {
-		fmt.Println(strings.TrimSpace(reply))
+		fmt.Println(renderMarkdown(strings.TrimSpace(reply)))
+		fmt.Println()
 	}
 	if executed, ok := payload["executed"].([]any); ok {
 		for _, item := range executed {
 			entry, _ := item.(map[string]any)
-			mark := "ok"
+			mark := green("✓ ok")
 			if entry["ok"] != true {
-				mark = "failed"
+				mark = red("✕ failed")
 			}
-			fmt.Printf("[%s] %v\n", entry["name"], mark)
+			name, _ := entry["name"].(string)
+			fmt.Printf("%s %s\n", bold("● "+name), mark)
 			if result, _ := entry["result"].(string); strings.TrimSpace(result) != "" {
-				fmt.Println(strings.TrimSpace(result))
+				fmt.Println(dim("  ⎿ " + strings.TrimSpace(result)))
 			}
 		}
 	}
@@ -442,7 +445,7 @@ func confirmProposal(reader *bufio.Reader, proposal map[string]any) bool {
 	if strings.TrimSpace(summary) == "" {
 		summary, _ = proposal["name"].(string)
 	}
-	fmt.Printf("Approve '%s'? [y/N]: ", summary)
+	fmt.Printf("%s Approve %s? [y/N]: ", yellow("◆"), bold("'"+summary+"'"))
 	answer, _ := reader.ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
@@ -461,7 +464,7 @@ func askLocal(reader *bufio.Reader, grants map[string]bool, cfg cliConfig, name 
 	case "deny":
 		return false, "blocked by permissions (`authris perms set " + name + " ask` to allow)"
 	}
-	fmt.Printf("Allow '%s'? [y]es / [a]lways / [N]o: ", localCallSummary(name, args))
+	fmt.Printf("%s Allow %s? [y]es / [a]lways / [N]o: ", yellow("◆"), bold("'"+localCallSummary(name, args)+"'"))
 	answer, _ := reader.ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
@@ -520,9 +523,11 @@ func cmdAI(args []string) int {
 			"local_tools": true, "effort": cfg.Effort,
 		}
 		for step := 0; step < 25; step++ {
+			stop := startSpinner("Thinking")
 			resp, err := chatRequest(creds, payload)
+			stop()
 			if err != nil {
-				fmt.Println("error:", err)
+				fmt.Println(red("✕ " + err.Error()))
 				return 1
 			}
 			if reply, _ := resp["reply"].(string); strings.TrimSpace(reply) != "" {
@@ -549,16 +554,18 @@ func cmdAI(args []string) int {
 					pending = append(pending, map[string]any{"id": id, "name": name, "arguments": callArgs})
 					allowed, reason := askLocal(reader, grants, cfg, name, callArgs)
 					if !allowed {
-						fmt.Printf("✕ %s: %s\n", name, reason)
+						fmt.Printf("%s %s: %s\n", red("✕"), name, reason)
 						results = append(results, map[string]any{"id": id, "error": reason})
 						continue
 					}
-					fmt.Printf("● %s\n", localCallSummary(name, callArgs))
+					fmt.Printf("%s\n", bold("● "+localCallSummary(name, callArgs)))
 					output, err := runLocalTool(name, callArgs)
 					if err != nil {
+						fmt.Printf("  %s %s\n", red("⎿"), err.Error())
 						results = append(results, map[string]any{"id": id, "error": err.Error()})
 						continue
 					}
+					fmt.Printf("  %s\n", green("⎿ done"))
 					results = append(results, map[string]any{"id": id, "output": output})
 				}
 			}
@@ -587,9 +594,14 @@ func cmdAI(args []string) int {
 	if len(prompt) > 0 {
 		return round(strings.Join(prompt, " "))
 	}
-	fmt.Printf("authris ai (%s) - /help for commands, empty line quits\n", cfg.Effort)
+	cwd, _ := os.Getwd()
+	fmt.Println()
+	fmt.Printf("  %s %s\n", bold("✻ authris ai"), dim("v"+cliVersion))
+	fmt.Printf("  %s\n", dim(cwd))
+	fmt.Printf("  %s\n", dim("effort "+cfg.Effort+" · /help for commands · empty line quits"))
+	fmt.Println()
 	for {
-		fmt.Print("> ")
+		fmt.Print(bold(cyan("❯") + " "))
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println()
@@ -608,18 +620,20 @@ func cmdAI(args []string) int {
 				if len(parts) == 2 && validEffort(parts[1]) {
 					cfg.Effort = parts[1]
 					_ = saveConfig(cfg)
-					fmt.Println("effort ->", cfg.Effort)
+					fmt.Println(dim("effort -> ") + cfg.Effort)
 				} else {
-					fmt.Println("effort is", cfg.Effort, "(low|medium|high)")
+					fmt.Println(dim("effort is ") + cfg.Effort + dim(" (low|medium|high)"))
 				}
 			case "/perms":
 				for _, tool := range agentTools {
-					fmt.Printf("%-10s %s\n", tool, permFor(cfg, tool))
+					fmt.Printf("  %-10s %s\n", tool, permFor(cfg, tool))
 				}
 			case "/help":
-				fmt.Println("/effort [low|medium|high]  /perms  /quit")
+				fmt.Println("  " + bold("/effort [low|medium|high]") + dim("  reasoning effort"))
+				fmt.Println("  " + bold("/perms") + dim("                  tool permissions"))
+				fmt.Println("  " + bold("/quit") + dim("                   exit"))
 			default:
-				fmt.Println("unknown command. /help for commands")
+				fmt.Println(dim("unknown command. /help for commands"))
 			}
 			continue
 		}
@@ -630,13 +644,14 @@ func cmdAI(args []string) int {
 func usage() {
 	fmt.Println("authris - Authris AI control CLI")
 	fmt.Println()
+	fmt.Println("  authris                        start the AI chat")
+	fmt.Println("  authris ai [prompt]            chat with the built-in assistant")
 	fmt.Println("  authris login --server <url>   save a personal token")
 	fmt.Println("  authris logout                 forget saved credentials")
 	fmt.Println("  authris status                 show server, user, scopes")
 	fmt.Println("  authris keys [project]         key inventory counts")
 	fmt.Println("  authris call <tool> [json]     call any MCP tool")
 	fmt.Println("  authris mcp                    stdio MCP bridge for local agents")
-	fmt.Println("  authris ai [prompt]          chat with the built-in assistant")
 	fmt.Println("  authris perms                  show or change agent permissions")
 	fmt.Println("  authris update                 update to the latest release")
 	fmt.Println("  authris version                show the CLI version")
@@ -644,7 +659,7 @@ func usage() {
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
+		os.Exit(cmdAI(nil))
 		return
 	}
 	code := 0
@@ -673,6 +688,8 @@ func main() {
 		code = cmdUpdate(os.Args[2:])
 	case "version":
 		fmt.Println("authris " + cliVersion)
+	case "help", "-h", "--help":
+		usage()
 	default:
 		usage()
 		code = 1
