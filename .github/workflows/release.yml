@@ -7,36 +7,14 @@ permissions:
   contents: write
 jobs:
   build:
-    strategy:
-      matrix:
-        os: [windows, linux, darwin]
-        arch: [amd64, arm64]
-        include:
-          - os: windows
-            ext: .exe
-          - os: linux
-            ext: ""
-          - os: darwin
-            ext: ""
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
-      - run: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -trimpath -o authris-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }} .
+      - run: go version
       - uses: actions/upload-artifact@v4
         with:
-          name: authris-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
-          path: authris-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - run: gh release create "${{ github.ref_name }}" dist/* --title "authris CLI ${{ github.ref_name }}" --notes "Install: see README.md"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: probe-artifact
+          path: go.mod
