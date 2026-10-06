@@ -215,7 +215,7 @@ func toolExec(args map[string]any) (string, error) {
 	if len(command) > 4000 {
 		return "", fmt.Errorf("command too long")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 	var cmd *exec.Cmd
 	if os.Getenv("OS") == "Windows_NT" || filepath.Separator == '\\' {
@@ -226,11 +226,11 @@ func toolExec(args map[string]any) (string, error) {
 	cmd.Dir = agentRoot
 	raw, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(raw))
-	if len(text) > 8*1024 {
-		text = text[:8*1024] + "\n(truncated)"
+	if len(text) > 16*1024 {
+		text = text[:16*1024] + "\n(truncated)"
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("timed out after 60s: %s", text)
+		return "", fmt.Errorf("timed out after 300s: %s", text)
 	}
 	if err != nil {
 		if text == "" {

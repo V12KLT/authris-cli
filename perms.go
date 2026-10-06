@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +17,14 @@ var defaultPerms = map[string]string{
 }
 
 const configRev = 1
+const termsRev = 1
+
+var agentTerms = "Authris AI agent terms\n\n" +
+	"This assistant works directly in the folder where you run it: it can create, edit, and overwrite files there and run terminal commands. " +
+	"It cannot reach outside that folder, but commands it runs can still change or delete your files. " +
+	"Review what it does and keep backups of anything important. " +
+	"By accepting, you agree that you are responsible for what the agent does in your project.\n\n" +
+	"Type 'accept' to continue: "
 
 type cliConfig struct {
 	Permissions     map[string]string `json:"permissions"`
@@ -24,9 +33,15 @@ type cliConfig struct {
 	UpdateChecked   int64             `json:"update_checked"`
 	UpdateAvailable string            `json:"update_available"`
 	Rev             int               `json:"rev"`
+	TermsRev        int               `json:"terms_rev"`
 }
 
+var configDirOverride = ""
+
 func configPath() string {
+	if configDirOverride != "" {
+		return filepath.Join(configDirOverride, "authris", "config.json")
+	}
 	base, err := os.UserConfigDir()
 	if err != nil || base == "" {
 		home, _ := os.UserHomeDir()
@@ -77,6 +92,7 @@ func loadConfig() cliConfig {
 	cfg.AutoUpdate = stored.AutoUpdate
 	cfg.UpdateChecked = stored.UpdateChecked
 	cfg.UpdateAvailable = stored.UpdateAvailable
+	cfg.TermsRev = stored.TermsRev
 	return cfg
 }
 
@@ -120,6 +136,24 @@ func permFor(cfg cliConfig, tool string) string {
 		return level
 	}
 	return "ask"
+}
+
+func checkTerms(cfg *cliConfig, reader *bufio.Reader) bool {
+	if cfg.TermsRev >= termsRev {
+		return true
+	}
+	fmt.Println()
+	fmt.Print(agentTerms)
+	answer, _ := reader.ReadString('\n')
+	if strings.ToLower(strings.TrimSpace(answer)) != "accept" {
+		fmt.Println("terms declined. The agent cannot run until you accept.")
+		return false
+	}
+	cfg.TermsRev = termsRev
+	_ = saveConfig(*cfg)
+	fmt.Println("terms accepted.")
+	fmt.Println()
+	return true
 }
 
 func cmdPerms(args []string) int {

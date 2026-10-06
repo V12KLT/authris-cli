@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,6 +115,41 @@ func TestToolArgAliases(t *testing.T) {
 		t.Fatal("expected missing path to fail")
 	} else if !strings.Contains(err.Error(), "content") {
 		t.Fatalf("error should name received args, got %q", err.Error())
+	}
+}
+
+func TestCheckTerms(t *testing.T) {
+	configDirOverride = t.TempDir()
+	defer func() { configDirOverride = "" }()
+	accepted := defaultConfig()
+	accepted.TermsRev = termsRev
+	if !checkTerms(&accepted, bufio.NewReader(strings.NewReader(""))) {
+		t.Fatal("accepted terms should pass without prompting")
+	}
+	fresh := defaultConfig()
+	if checkTerms(&fresh, bufio.NewReader(strings.NewReader("no\n"))) {
+		t.Fatal("declined terms should fail")
+	}
+	if fresh.TermsRev >= termsRev {
+		t.Fatal("declined terms should not be stored")
+	}
+	if !checkTerms(&fresh, bufio.NewReader(strings.NewReader("accept\n"))) {
+		t.Fatal("typed accept should pass")
+	}
+	if fresh.TermsRev != termsRev {
+		t.Fatalf("TermsRev = %d", fresh.TermsRev)
+	}
+}
+
+func TestSnippet(t *testing.T) {
+	if got := snippet("a  b\nc", 10); got != "a b c" {
+		t.Fatalf("snippet = %q", got)
+	}
+	if got := snippet("abcdef", 3); got != "abc…" {
+		t.Fatalf("snippet = %q", got)
+	}
+	if got := snippet("   ", 10); got != "ok" {
+		t.Fatalf("snippet = %q", got)
 	}
 }
 

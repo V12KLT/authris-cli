@@ -442,6 +442,17 @@ func printChatReply(payload map[string]any, announced *bool) []map[string]any {
 	return proposals
 }
 
+func snippet(text string, limit int) string {
+	flat := strings.Join(strings.Fields(text), " ")
+	if len(flat) > limit {
+		return flat[:limit] + "…"
+	}
+	if flat == "" {
+		return "ok"
+	}
+	return flat
+}
+
 func confirmProposal(reader *bufio.Reader, proposal map[string]any) bool {
 	summary, _ := proposal["summary"].(string)
 	if strings.TrimSpace(summary) == "" {
@@ -505,6 +516,9 @@ func cmdAI(args []string) int {
 	maybeNotifyUpdate(&cfg)
 	project := defaultProject(creds)
 	reader := bufio.NewReader(os.Stdin)
+	if !checkTerms(&cfg, reader) {
+		return 1
+	}
 	var history []map[string]any
 	announced := false
 	grants := map[string]bool{}
@@ -514,9 +528,12 @@ func cmdAI(args []string) int {
 			return
 		}
 		history = append(history, map[string]any{"role": role, "content": content})
-		if len(history) > 10 {
-			history = history[len(history)-10:]
+		if len(history) > 30 {
+			history = history[len(history)-30:]
 		}
+	}
+	note := func(format string, args ...any) {
+		remember("user", "[agent note] "+fmt.Sprintf(format, args...))
 	}
 	round := func(message string) int {
 		remember("user", message)
@@ -540,6 +557,21 @@ func cmdAI(args []string) int {
 				remember("assistant", reply)
 			}
 			proposals := printChatReply(resp, &announced)
+			if executedList, ok := resp["executed"].([]any); ok {
+				for _, item := range executedList {
+					entry, _ := item.(map[string]any)
+					name, _ := entry["name"].(string)
+					status := "ok"
+					detail := ""
+					if entry["ok"] != true {
+						status = "failed"
+						if result, _ := entry["result"].(string); strings.TrimSpace(result) != "" {
+							detail = ": " + snippet(result, 200)
+						}
+					}
+					note("server %s: %s%s", name, status, detail)
+				}
+			}
 			var pending []any
 			var results []any
 			if list, ok := resp["local_calls"].([]any); ok {
@@ -559,27 +591,38 @@ func cmdAI(args []string) int {
 					}
 					pending = append(pending, map[string]any{"id": id, "name": name, "arguments": callArgs})
 					allowed, reason := askLocal(reader, grants, cfg, name, callArgs)
+					summary := localCallSummary(name, callArgs)
 					if !allowed {
 						fmt.Printf("%s %s: %s\n", red("✕"), name, reason)
+						note("user declined %s (%s)", name, reason)
 						results = append(results, map[string]any{"id": id, "error": reason})
 						continue
 					}
-					fmt.Printf("%s\n", bold("● "+localCallSummary(name, callArgs)))
+					fmt.Printf("%s\n", bold("● "+summary))
 					output, err := runLocalTool(name, callArgs)
 					if err != nil {
 						fmt.Printf("  %s %s\n", red("⎿"), err.Error())
+						note("%s failed: %s", summary, snippet(err.Error(), 200))
 						results = append(results, map[string]any{"id": id, "error": err.Error()})
 						continue
 					}
+					note("%s done: %s", summary, snippet(output, 200))
 					fmt.Printf("  %s\n", green("⎿ done"))
 					results = append(results, map[string]any{"id": id, "output": output})
 				}
 			}
 			var decided []map[string]any
 			for _, proposal := range proposals {
+				approved := confirmProposal(reader, proposal)
+				name, _ := proposal["name"].(string)
+				if approved {
+					note("user approved %s", name)
+				} else {
+					note("user declined %s", name)
+				}
 				decided = append(decided, map[string]any{
 					"name": proposal["name"], "arguments": proposal["arguments"],
-					"approved": confirmProposal(reader, proposal),
+					"approved": approved,
 				})
 			}
 			if len(pending) == 0 && len(decided) == 0 {

@@ -44,7 +44,8 @@ Tokens come from Dashboard > AI Access > Personal tokens. They are stored with `
 and edits files where you run it, runs install and test commands, and manages
 your Authris account through the same assistant as the dashboard. Reads run
 freely and writes, edits, and commands run without asking unless you
-restrict them.
+restrict them. It also runs your build and tests itself to verify changes.
+The first run asks you to accept the agent terms.
 
 ```
 authris ai "add authris licensing to this project"
