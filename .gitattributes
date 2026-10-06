@@ -1,0 +1,2 @@
+install.sh text eol=lf
+.github/workflows/release.yml text eol=lf
