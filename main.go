@@ -424,8 +424,10 @@ func printChatReply(payload map[string]any, announced *bool) []map[string]any {
 			}
 			name, _ := entry["name"].(string)
 			fmt.Printf("%s %s\n", bold("● "+name), mark)
-			if result, _ := entry["result"].(string); strings.TrimSpace(result) != "" {
-				fmt.Println(dim("  ⎿ " + strings.TrimSpace(result)))
+			if entry["ok"] != true {
+				if result, _ := entry["result"].(string); strings.TrimSpace(result) != "" {
+					fmt.Println(red("  ⎿ " + strings.TrimSpace(result)))
+				}
 			}
 		}
 	}
@@ -523,7 +525,11 @@ func cmdAI(args []string) int {
 			"local_tools": true, "effort": cfg.Effort,
 		}
 		for step := 0; step < 25; step++ {
-			stop := startSpinner("Thinking")
+			label := "Thinking"
+			if step > 0 {
+				label = fmt.Sprintf("Working · step %d", step+1)
+			}
+			stop := startSpinner(label)
 			resp, err := chatRequest(creds, payload)
 			stop()
 			if err != nil {

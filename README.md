@@ -43,7 +43,8 @@ Tokens come from Dashboard > AI Access > Personal tokens. They are stored with `
 `authris ai` (or just `authris`) is a coding agent for your project. It reads
 and edits files where you run it, runs install and test commands, and manages
 your Authris account through the same assistant as the dashboard. Reads run
-freely; writes, edits, and commands ask first unless you allow them.
+freely and writes, edits, and commands run without asking unless you
+restrict them.
 
 ```
 authris ai "add authris licensing to this project"
@@ -59,7 +60,7 @@ shows tool permissions, and `/quit` exits.
 ```
 authris perms                          show every tool and setting
 authris perms set exec deny            never run commands
-authris perms set fs_write allow       write without asking
+authris perms set fs_write ask         ask before writing files
 authris perms effort high              default reasoning effort
 authris perms autoupdate off           disable update checks
 ```

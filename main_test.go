@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -75,11 +76,10 @@ func TestFSEditUnique(t *testing.T) {
 
 func TestPermFor(t *testing.T) {
 	cfg := defaultConfig()
-	if permFor(cfg, "fs_read") != "allow" {
-		t.Fatalf("fs_read = %s", permFor(cfg, "fs_read"))
-	}
-	if permFor(cfg, "exec") != "ask" {
-		t.Fatalf("exec = %s", permFor(cfg, "exec"))
+	for _, tool := range agentTools {
+		if permFor(cfg, tool) != "allow" {
+			t.Fatalf("%s = %s, want allow", tool, permFor(cfg, tool))
+		}
 	}
 	cfg.Permissions["exec"] = "deny"
 	if permFor(cfg, "exec") != "deny" {
@@ -88,6 +88,32 @@ func TestPermFor(t *testing.T) {
 	cfg.Permissions["exec"] = "bogus"
 	if permFor(cfg, "exec") != "ask" {
 		t.Fatalf("invalid level should fall back, got %s", permFor(cfg, "exec"))
+	}
+	if permFor(cfg, "unknown-tool") != "ask" {
+		t.Fatalf("unknown tool = %s", permFor(cfg, "unknown-tool"))
+	}
+}
+
+func TestToolArgAliases(t *testing.T) {
+	root := t.TempDir()
+	agentRoot = root
+	defer func() { agentRoot = "" }()
+	if _, err := runLocalTool("fs_write", map[string]any{"file": "a.txt", "text": "hello"}); err != nil {
+		t.Fatalf("write with aliases = %v", err)
+	}
+	if out, err := runLocalTool("fs_read", map[string]any{"FileName": "a.txt"}); err != nil || out != "hello" {
+		t.Fatalf("read with alias = %q %v", out, err)
+	}
+	if _, err := runLocalTool("fs_edit", map[string]any{"PATH": "a.txt", "old": "hello", "new": "bye"}); err != nil {
+		t.Fatalf("edit with aliases = %v", err)
+	}
+	if out, err := runLocalTool("fs_read", map[string]any{"path": "a.txt"}); err != nil || out != "bye" {
+		t.Fatalf("read after edit = %q %v", out, err)
+	}
+	if _, err := runLocalTool("fs_write", map[string]any{"content": "x"}); err == nil {
+		t.Fatal("expected missing path to fail")
+	} else if !strings.Contains(err.Error(), "content") {
+		t.Fatalf("error should name received args, got %q", err.Error())
 	}
 }
 

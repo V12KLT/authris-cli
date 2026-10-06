@@ -65,8 +65,44 @@ func toolString(args map[string]any, key string) string {
 	return value
 }
 
+func toolArg(args map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := args[key].(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	lowered := map[string]string{}
+	for key, value := range args {
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			lowered[strings.ToLower(key)] = text
+		}
+	}
+	for _, key := range keys {
+		if text, ok := lowered[strings.ToLower(key)]; ok {
+			return text
+		}
+	}
+	return ""
+}
+
+func argKeys(args map[string]any) string {
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) == 0 {
+		return "(none)"
+	}
+	return strings.Join(keys, ", ")
+}
+
+func toolPath(args map[string]any) string {
+	return toolArg(args, "path", "file", "filename", "filepath", "dir", "folder")
+}
+
 func toolFSList(args map[string]any) (string, error) {
-	dir, err := insideRoot(toolString(args, "path"))
+	dir, err := insideRoot(toolPath(args))
 	if err != nil {
 		return "", err
 	}
@@ -93,9 +129,9 @@ func toolFSList(args map[string]any) (string, error) {
 }
 
 func toolFSRead(args map[string]any) (string, error) {
-	path := strings.TrimSpace(toolString(args, "path"))
+	path := strings.TrimSpace(toolPath(args))
 	if path == "" {
-		return "", fmt.Errorf("path is required")
+		return "", fmt.Errorf("path is required (got: %s)", argKeys(args))
 	}
 	full, err := insideRoot(path)
 	if err != nil {
@@ -123,15 +159,15 @@ func toolFSRead(args map[string]any) (string, error) {
 }
 
 func toolFSWrite(args map[string]any) (string, error) {
-	path := strings.TrimSpace(toolString(args, "path"))
+	path := strings.TrimSpace(toolPath(args))
 	if path == "" {
-		return "", fmt.Errorf("path is required")
+		return "", fmt.Errorf("path is required (got: %s)", argKeys(args))
 	}
 	full, err := insideRoot(path)
 	if err != nil {
 		return "", err
 	}
-	content := toolString(args, "content")
+	content := toolArg(args, "content", "text", "data", "body")
 	if len(content) > 512*1024 {
 		return "", fmt.Errorf("content too large")
 	}
@@ -146,11 +182,11 @@ func toolFSWrite(args map[string]any) (string, error) {
 }
 
 func toolFSEdit(args map[string]any) (string, error) {
-	path := strings.TrimSpace(toolString(args, "path"))
-	oldText := toolString(args, "old_text")
-	newText := toolString(args, "new_text")
+	path := strings.TrimSpace(toolPath(args))
+	oldText := toolArg(args, "old_text", "old", "find", "search")
+	newText := toolArg(args, "new_text", "new", "replace", "replacement")
 	if path == "" || oldText == "" {
-		return "", fmt.Errorf("path and old_text are required")
+		return "", fmt.Errorf("path and old_text are required (got: %s)", argKeys(args))
 	}
 	full, err := insideRoot(path)
 	if err != nil {
@@ -172,9 +208,9 @@ func toolFSEdit(args map[string]any) (string, error) {
 }
 
 func toolExec(args map[string]any) (string, error) {
-	command := strings.TrimSpace(toolString(args, "command"))
+	command := strings.TrimSpace(toolArg(args, "command", "cmd", "script"))
 	if command == "" {
-		return "", fmt.Errorf("command is required")
+		return "", fmt.Errorf("command is required (got: %s)", argKeys(args))
 	}
 	if len(command) > 4000 {
 		return "", fmt.Errorf("command too long")
@@ -225,7 +261,7 @@ func runLocalTool(name string, args map[string]any) (string, error) {
 }
 
 func localCallSummary(name string, args map[string]any) string {
-	path := strings.TrimSpace(toolString(args, "path"))
+	path := strings.TrimSpace(toolPath(args))
 	switch name {
 	case "fs_list":
 		if path == "" {
