@@ -37,3 +37,5 @@ jobs:
         with:
           path: dist
       - run: gh release create "${{ github.ref_name }}" dist/* --title "test" --notes "test"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
