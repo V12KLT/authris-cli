@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const cliVersion = "4.4.8"
+const cliVersion = "4.4.9"
 const cliRepo = "V12KLT/authris-cli"
 
 func parseTagVersion(tag string) []int {
@@ -167,8 +167,7 @@ func replaceSelf(fresh string) error {
 	}
 	if runtime.GOOS == "windows" {
 		quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
-		pid := os.Getpid()
-		script := "$ErrorActionPreference='Stop'; try { Wait-Process -Id " + strconv.Itoa(pid) + " -ErrorAction Stop } catch {}; for ($i=0; $i -lt 40; $i++) { try { Move-Item -LiteralPath " + quote(fresh) + " -Destination " + quote(current) + " -Force; Remove-Item -LiteralPath " + quote(fresh) + " -Force; exit 0 } catch { Start-Sleep -Milliseconds 250 } }; exit 1"
+		script := "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 2; for ($i=0; $i -lt 40; $i++) { try { Move-Item -LiteralPath " + quote(fresh) + " -Destination " + quote(current) + " -Force; Remove-Item -LiteralPath " + quote(fresh) + " -Force; exit 0 } catch { Start-Sleep -Milliseconds 250 } }; exit 1"
 		helper := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script)
 		if err := helper.Start(); err != nil {
 			return err
