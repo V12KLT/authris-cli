@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -166,6 +167,19 @@ func replaceSelf(fresh string) error {
 	current, err = filepath.EvalSymlinks(current)
 	if err != nil {
 		return err
+	}
+	if runtime.GOOS == "windows" {
+		// Windows cannot rename the executable while it is running. Hand the
+		// replacement to a short-lived PowerShell helper which waits for this
+		// process to exit, swaps the file, and removes the downloaded copy.
+		quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+		pid := os.Getpid()
+		script := "$ErrorActionPreference='SilentlyContinue'; Wait-Process -Id " + strconv.Itoa(pid) + "; Move-Item -LiteralPath " + quote(fresh) + " -Destination " + quote(current) + " -Force; Remove-Item -LiteralPath " + quote(fresh) + " -Force"
+		helper := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script)
+		if err := helper.Start(); err != nil {
+			return err
+		}
+		return nil
 	}
 	backup := current + ".old"
 	os.Remove(backup)
