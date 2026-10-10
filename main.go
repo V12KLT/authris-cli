@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/chzyer/readline"
 	"io"
 	"net/http"
 	"os"
@@ -443,6 +444,64 @@ func printKeySystemHeader(creds credentials, selected string) {
 	fmt.Println()
 }
 
+type slashCommand struct {
+	Name        string
+	Description string
+}
+
+var slashCommands = []slashCommand{
+	{Name: "/project", Description: "switch the active project"},
+	{Name: "/projects", Description: "list projects and key totals"},
+	{Name: "/keys", Description: "show key inventory"},
+	{Name: "/list-keys", Description: "list key prefixes"},
+	{Name: "/add-key", Description: "create keys"},
+	{Name: "/delete-key", Description: "delete a key"},
+	{Name: "/pause-key", Description: "pause a key"},
+	{Name: "/unpause-key", Description: "unpause a key"},
+	{Name: "/extend-key", Description: "extend a key"},
+	{Name: "/reset-hwid", Description: "reset a key HWID"},
+	{Name: "/key-note", Description: "save a key note"},
+	{Name: "/stats", Description: "show project stats"},
+	{Name: "/setup", Description: "show integration setup"},
+	{Name: "/status", Description: "show account connection"},
+	{Name: "/call", Description: "call an Authris tool"},
+	{Name: "/perms", Description: "show local permissions"},
+	{Name: "/effort", Description: "change AI effort"},
+	{Name: "/update", Description: "update the CLI"},
+	{Name: "/help", Description: "show all commands"},
+	{Name: "/quit", Description: "exit the CLI"},
+}
+
+func slashMatches(line string) []slashCommand {
+	text := strings.TrimSpace(line)
+	if !strings.HasPrefix(text, "/") {
+		return nil
+	}
+	query := strings.ToLower(strings.Fields(text)[0])
+	matches := make([]slashCommand, 0, len(slashCommands))
+	for _, command := range slashCommands {
+		if query == "/" || strings.HasPrefix(command.Name, query) || strings.Contains(command.Name, query) {
+			matches = append(matches, command)
+		}
+	}
+	return matches
+}
+
+func slashPrompt(line string) string {
+	matches := slashMatches(line)
+	if matches == nil {
+		return "❯ "
+	}
+	var b strings.Builder
+	for _, command := range matches {
+		fmt.Fprintf(&b, "  %-14s %s\n", command.Name, command.Description)
+	}
+	if len(matches) == 0 {
+		b.WriteString("  no matching commands\n")
+	}
+	b.WriteString("❯ ")
+	return b.String()
+}
 func slashMenu() {
 	fmt.Println(bold("Commands"))
 	fmt.Println("  /project <name|id>       switch the active project")
@@ -534,13 +593,13 @@ func slashRead(creds credentials, name string, project string, args map[string]a
 	fmt.Println(text)
 }
 
-func slashWrite(reader *bufio.Reader, creds credentials, name string, project string, args map[string]any) {
+func slashWrite(readLine func() (string, error), creds credentials, name string, project string, args map[string]any) {
 	if project == "" {
 		fmt.Println(red("choose a project first with /project <name|id>"))
 		return
 	}
 	args["project"] = project
-	if !confirmProposal(reader, map[string]any{"name": name, "summary": name}) {
+	if !confirmProposal(readLine, map[string]any{"name": name, "summary": name}) {
 		return
 	}
 	text, err := callTool(creds, name, args)
@@ -551,7 +610,7 @@ func slashWrite(reader *bufio.Reader, creds credentials, name string, project st
 	fmt.Println(text)
 }
 
-func handleSlash(line string, reader *bufio.Reader, creds credentials, project *string, cfg *cliConfig) bool {
+func handleSlash(line string, readLine func() (string, error), creds credentials, project *string, cfg *cliConfig) bool {
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
 		slashMenu()
@@ -591,26 +650,26 @@ func handleSlash(line string, reader *bufio.Reader, creds credentials, project *
 		if len(args) > 1 {
 			duration = strings.Join(args[1:], " ")
 		}
-		slashWrite(reader, creds, "create_keys", *project, map[string]any{"count": count, "duration": duration})
+		slashWrite(readLine, creds, "create_keys", *project, map[string]any{"count": count, "duration": duration})
 	case "/delete-key", "/pause-key", "/unpause-key", "/reset-hwid":
 		if len(args) != 1 {
 			fmt.Println("usage: " + command + " <key>")
 			break
 		}
 		name := map[string]string{"/delete-key": "delete_key", "/pause-key": "pause_key", "/unpause-key": "unpause_key", "/reset-hwid": "reset_hwid"}[command]
-		slashWrite(reader, creds, name, *project, map[string]any{"key": args[0]})
+		slashWrite(readLine, creds, name, *project, map[string]any{"key": args[0]})
 	case "/extend-key":
 		if len(args) < 2 {
 			fmt.Println("usage: /extend-key <key> <duration>")
 			break
 		}
-		slashWrite(reader, creds, "extend_key", *project, map[string]any{"key": args[0], "duration": strings.Join(args[1:], " ")})
+		slashWrite(readLine, creds, "extend_key", *project, map[string]any{"key": args[0], "duration": strings.Join(args[1:], " ")})
 	case "/key-note":
 		if len(args) < 2 {
 			fmt.Println("usage: /key-note <key> <note>")
 			break
 		}
-		slashWrite(reader, creds, "set_key_note", *project, map[string]any{"key": args[0], "note": strings.Join(args[1:], " ")})
+		slashWrite(readLine, creds, "set_key_note", *project, map[string]any{"key": args[0], "note": strings.Join(args[1:], " ")})
 	case "/status":
 		_ = cmdStatus()
 	case "/update":
@@ -705,13 +764,13 @@ func snippet(text string, limit int) string {
 	return flat
 }
 
-func confirmProposal(reader *bufio.Reader, proposal map[string]any) bool {
+func confirmProposal(readLine func() (string, error), proposal map[string]any) bool {
 	summary, _ := proposal["summary"].(string)
 	if strings.TrimSpace(summary) == "" {
 		summary, _ = proposal["name"].(string)
 	}
 	fmt.Printf("%s Approve %s? [y/N]: ", yellow("◆"), bold("'"+summary+"'"))
-	answer, _ := reader.ReadString('\n')
+	answer, _ := readLine()
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
 		return true
@@ -719,7 +778,7 @@ func confirmProposal(reader *bufio.Reader, proposal map[string]any) bool {
 	return false
 }
 
-func askLocal(reader *bufio.Reader, grants map[string]bool, cfg cliConfig, name string, args map[string]any) (bool, string) {
+func askLocal(readLine func() (string, error), grants map[string]bool, cfg cliConfig, name string, args map[string]any) (bool, string) {
 	if grants[name] {
 		return true, ""
 	}
@@ -730,7 +789,7 @@ func askLocal(reader *bufio.Reader, grants map[string]bool, cfg cliConfig, name 
 		return false, "blocked by permissions (`authris perms set " + name + " ask` to allow)"
 	}
 	fmt.Printf("%s Allow %s? [y]es / [a]lways / [N]o: ", yellow("◆"), bold("'"+localCallSummary(name, args)+"'"))
-	answer, _ := reader.ReadString('\n')
+	answer, _ := readLine()
 	switch strings.ToLower(strings.TrimSpace(answer)) {
 	case "y", "yes":
 		return true, ""
@@ -769,6 +828,23 @@ func cmdAI(args []string) int {
 	reader := bufio.NewReader(os.Stdin)
 	if !checkTerms(&cfg, reader) {
 		return 1
+	}
+	var rl *readline.Instance
+	readLine := func() (string, error) { return reader.ReadString('\n') }
+	readlineConfig := &readline.Config{
+		Prompt:      "❯ ",
+		HistoryFile: filepath.Join(filepath.Dir(credPath()), "history"),
+	}
+	readlineConfig.SetListener(func(line []rune, pos int, key rune) ([]rune, int, bool) {
+		if rl != nil {
+			rl.SetPrompt(slashPrompt(string(line)))
+		}
+		return line, pos, true
+	})
+	if instance, openErr := readline.NewEx(readlineConfig); openErr == nil {
+		rl = instance
+		defer rl.Close()
+		readLine = rl.Readline
 	}
 	printKeySystemHeader(creds, project)
 	var history []map[string]any
@@ -842,7 +918,7 @@ func cmdAI(args []string) int {
 						callArgs = map[string]any{}
 					}
 					pending = append(pending, map[string]any{"id": id, "name": name, "arguments": callArgs})
-					allowed, reason := askLocal(reader, grants, cfg, name, callArgs)
+					allowed, reason := askLocal(readLine, grants, cfg, name, callArgs)
 					summary := localCallSummary(name, callArgs)
 					if !allowed {
 						fmt.Printf("%s %s: %s\n", red("✕"), name, reason)
@@ -865,7 +941,7 @@ func cmdAI(args []string) int {
 			}
 			var decided []map[string]any
 			for _, proposal := range proposals {
-				approved := confirmProposal(reader, proposal)
+				approved := confirmProposal(readLine, proposal)
 				name, _ := proposal["name"].(string)
 				if approved {
 					note("user approved %s", name)
@@ -902,18 +978,23 @@ func cmdAI(args []string) int {
 	fmt.Printf("  %s\n", dim("effort "+cfg.Effort+" · /help for commands · empty line quits"))
 	fmt.Println()
 	for {
-		fmt.Print(bold(cyan("❯") + " "))
-		line, err := reader.ReadString('\n')
+		if rl == nil {
+			fmt.Print(bold(cyan("❯") + " "))
+		}
+		line, err := readLine()
 		if err != nil {
 			fmt.Println()
 			return 0
 		}
 		line = strings.TrimSpace(line)
+		if rl != nil {
+			rl.SetPrompt("❯ ")
+		}
 		if line == "" {
 			return 0
 		}
 		if strings.HasPrefix(line, "/") {
-			if handleSlash(line, reader, creds, &project, &cfg) {
+			if handleSlash(line, readLine, creds, &project, &cfg) {
 				return 0
 			}
 			continue
