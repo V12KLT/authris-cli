@@ -16,7 +16,7 @@ var defaultPerms = map[string]string{
 	"fs_write": "allow", "fs_edit": "allow", "exec": "allow",
 }
 
-const configRev = 1
+const configRev = 2
 const termsRev = 1
 
 var agentTerms = "Authris AI agent terms\n\n" +
@@ -81,6 +81,7 @@ func loadConfig() cliConfig {
 				cfg.Permissions[tool] = defaultPerms[tool]
 			}
 		}
+		cfg.AutoUpdate = true
 		cfg.Rev = configRev
 		_ = saveConfig(cfg)
 	} else {

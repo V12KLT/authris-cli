@@ -765,7 +765,6 @@ func cmdAI(args []string) int {
 		fmt.Println("error:", err)
 		return 1
 	}
-	maybeNotifyUpdate(&cfg)
 	project := defaultProject(creds)
 	reader := bufio.NewReader(os.Stdin)
 	if !checkTerms(&cfg, reader) {
@@ -941,8 +940,14 @@ func usage() {
 
 func main() {
 	if len(os.Args) < 2 {
+		cfg := loadConfig()
+		maybeNotifyUpdate(&cfg)
 		os.Exit(cmdAI(nil))
 		return
+	}
+	if os.Args[1] != "update" && os.Args[1] != "version" && os.Args[1] != "help" && os.Args[1] != "-h" && os.Args[1] != "--help" {
+		cfg := loadConfig()
+		maybeNotifyUpdate(&cfg)
 	}
 	code := 0
 	switch os.Args[1] {

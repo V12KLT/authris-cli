@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const cliVersion = "4.4.3"
+const cliVersion = "4.4.4"
 const cliRepo = "V12KLT/authris-cli"
 
 func parseTagVersion(tag string) []int {
@@ -103,9 +103,6 @@ func fetchLatestTag() (string, error) {
 }
 
 func maybeNotifyUpdate(cfg *cliConfig) {
-	if !cfg.AutoUpdate {
-		return
-	}
 	now := time.Now().Unix()
 	if cfg.UpdateChecked > 0 && now-cfg.UpdateChecked < 86400 {
 		if cfg.UpdateAvailable != "" && newerThan(cfg.UpdateAvailable, cliVersion) {
