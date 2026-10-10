@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const cliVersion = "4.4.2"
+const cliVersion = "4.4.3"
 const cliRepo = "V12KLT/authris-cli"
 
 func parseTagVersion(tag string) []int {
@@ -169,9 +169,6 @@ func replaceSelf(fresh string) error {
 		return err
 	}
 	if runtime.GOOS == "windows" {
-		// Windows cannot rename the executable while it is running. Hand the
-		// replacement to a short-lived PowerShell helper which waits for this
-		// process to exit, swaps the file, and removes the downloaded copy.
 		quote := func(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
 		pid := os.Getpid()
 		script := "$ErrorActionPreference='SilentlyContinue'; Wait-Process -Id " + strconv.Itoa(pid) + "; Move-Item -LiteralPath " + quote(fresh) + " -Destination " + quote(current) + " -Force; Remove-Item -LiteralPath " + quote(fresh) + " -Force"

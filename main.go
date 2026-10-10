@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -442,6 +443,212 @@ func printKeySystemHeader(creds credentials, selected string) {
 	fmt.Println()
 }
 
+func slashMenu() {
+	fmt.Println(bold("Commands"))
+	fmt.Println("  /project <name|id>       switch the active project")
+	fmt.Println("  /projects                list projects and key totals")
+	fmt.Println("  /keys                    show key inventory")
+	fmt.Println("  /list-keys               list key prefixes")
+	fmt.Println("  /add-key [count] [time]  create keys")
+	fmt.Println("  /delete-key <key>        delete a key")
+	fmt.Println("  /pause-key <key>         pause a key")
+	fmt.Println("  /unpause-key <key>       unpause a key")
+	fmt.Println("  /extend-key <key> <time> extend a key")
+	fmt.Println("  /reset-hwid <key>        reset a key HWID")
+	fmt.Println("  /key-note <key> <note>   save a key note")
+	fmt.Println("  /stats                   show project stats")
+	fmt.Println("  /setup <language>        show integration setup")
+	fmt.Println("  /status                  show account connection")
+	fmt.Println("  /call <tool> <json>      call an Authris tool")
+	fmt.Println("  /perms, /effort, /update, /help, /quit")
+}
+
+func slashProjects(creds credentials) {
+	text, err := callTool(creds, "list_projects", map[string]any{})
+	if err != nil {
+		fmt.Println(red(err.Error()))
+		return
+	}
+	var list struct {
+		Projects []struct {
+			ID     string `json:"project_id"`
+			Name   string `json:"name"`
+			Total  int    `json:"total_keys"`
+			Active int    `json:"active"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal([]byte(text), &list) != nil {
+		fmt.Println(red("could not read projects"))
+		return
+	}
+	for _, p := range list.Projects {
+		fmt.Printf("  %s  %s  ·  %d keys  ·  %d active\n", p.ID, p.Name, p.Total, p.Active)
+	}
+	if len(list.Projects) == 0 {
+		fmt.Println("  no projects")
+	}
+}
+
+func slashProject(creds credentials, args []string, project *string) {
+	if len(args) == 0 {
+		slashProjects(creds)
+		return
+	}
+	text, err := callTool(creds, "list_projects", map[string]any{})
+	if err != nil {
+		fmt.Println(red(err.Error()))
+		return
+	}
+	var list struct {
+		Projects []struct {
+			ID   string `json:"project_id"`
+			Name string `json:"name"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal([]byte(text), &list) != nil {
+		fmt.Println(red("could not read projects"))
+		return
+	}
+	needle := strings.Join(args, " ")
+	for _, p := range list.Projects {
+		if p.ID == needle || strings.EqualFold(p.Name, needle) {
+			*project = p.ID
+			fmt.Println("project -> " + p.Name)
+			return
+		}
+	}
+	fmt.Println(red("project not found: " + needle))
+}
+
+func slashRead(creds credentials, name string, project string, args map[string]any) {
+	if project == "" {
+		fmt.Println(red("choose a project first with /project <name|id>"))
+		return
+	}
+	args["project"] = project
+	text, err := callTool(creds, name, args)
+	if err != nil {
+		fmt.Println(red(err.Error()))
+		return
+	}
+	fmt.Println(text)
+}
+
+func slashWrite(reader *bufio.Reader, creds credentials, name string, project string, args map[string]any) {
+	if project == "" {
+		fmt.Println(red("choose a project first with /project <name|id>"))
+		return
+	}
+	args["project"] = project
+	if !confirmProposal(reader, map[string]any{"name": name, "summary": name}) {
+		return
+	}
+	text, err := callTool(creds, name, args)
+	if err != nil {
+		fmt.Println(red(err.Error()))
+		return
+	}
+	fmt.Println(text)
+}
+
+func handleSlash(line string, reader *bufio.Reader, creds credentials, project *string, cfg *cliConfig) bool {
+	parts := strings.Fields(line)
+	if len(parts) == 0 {
+		slashMenu()
+		return false
+	}
+	command := strings.ToLower(parts[0])
+	args := parts[1:]
+	switch command {
+	case "/", "/help":
+		slashMenu()
+	case "/quit", "/exit":
+		return true
+	case "/project", "/use":
+		slashProject(creds, args, project)
+	case "/projects":
+		slashProjects(creds)
+	case "/keys":
+		slashRead(creds, "key_inventory", *project, map[string]any{})
+	case "/list-keys":
+		slashRead(creds, "list_keys", *project, map[string]any{"page": 0})
+	case "/stats":
+		slashRead(creds, "project_stats", *project, map[string]any{})
+	case "/setup":
+		if len(args) != 1 {
+			fmt.Println("usage: /setup <language>")
+			break
+		}
+		slashRead(creds, "setup_wizard", *project, map[string]any{"language": args[0]})
+	case "/add-key":
+		count := 1
+		duration := "Perm"
+		if len(args) > 0 {
+			if parsed, err := strconv.Atoi(args[0]); err == nil && parsed > 0 {
+				count = parsed
+			}
+		}
+		if len(args) > 1 {
+			duration = strings.Join(args[1:], " ")
+		}
+		slashWrite(reader, creds, "create_keys", *project, map[string]any{"count": count, "duration": duration})
+	case "/delete-key", "/pause-key", "/unpause-key", "/reset-hwid":
+		if len(args) != 1 {
+			fmt.Println("usage: " + command + " <key>")
+			break
+		}
+		name := map[string]string{"/delete-key": "delete_key", "/pause-key": "pause_key", "/unpause-key": "unpause_key", "/reset-hwid": "reset_hwid"}[command]
+		slashWrite(reader, creds, name, *project, map[string]any{"key": args[0]})
+	case "/extend-key":
+		if len(args) < 2 {
+			fmt.Println("usage: /extend-key <key> <duration>")
+			break
+		}
+		slashWrite(reader, creds, "extend_key", *project, map[string]any{"key": args[0], "duration": strings.Join(args[1:], " ")})
+	case "/key-note":
+		if len(args) < 2 {
+			fmt.Println("usage: /key-note <key> <note>")
+			break
+		}
+		slashWrite(reader, creds, "set_key_note", *project, map[string]any{"key": args[0], "note": strings.Join(args[1:], " ")})
+	case "/status":
+		_ = cmdStatus()
+	case "/update":
+		_ = cmdUpdate(nil)
+	case "/effort":
+		if len(args) == 1 && validEffort(args[0]) {
+			cfg.Effort = args[0]
+			_ = saveConfig(*cfg)
+			fmt.Println("effort -> " + cfg.Effort)
+		} else {
+			fmt.Println("effort is " + cfg.Effort + " (low|medium|high)")
+		}
+	case "/perms":
+		for _, tool := range agentTools {
+			fmt.Printf("  %-10s %s\n", tool, permFor(*cfg, tool))
+		}
+	case "/call":
+		if len(args) < 1 {
+			fmt.Println("usage: /call <tool> [json]")
+			break
+		}
+		callArgs := map[string]any{}
+		if len(args) > 1 && json.Unmarshal([]byte(strings.Join(args[1:], " ")), &callArgs) != nil {
+			fmt.Println(red("invalid JSON"))
+			break
+		}
+		text, err := callTool(creds, args[0], callArgs)
+		if err != nil {
+			fmt.Println(red(err.Error()))
+		} else {
+			fmt.Println(text)
+		}
+	default:
+		fmt.Println(dim("unknown command. Type / for options."))
+	}
+	return false
+}
+
 func printChatReply(payload map[string]any, announced *bool) []map[string]any {
 	if !*announced {
 		var scopes []string
@@ -707,28 +914,8 @@ func cmdAI(args []string) int {
 			return 0
 		}
 		if strings.HasPrefix(line, "/") {
-			parts := strings.Fields(line)
-			switch parts[0] {
-			case "/quit", "/exit":
+			if handleSlash(line, reader, creds, &project, &cfg) {
 				return 0
-			case "/effort":
-				if len(parts) == 2 && validEffort(parts[1]) {
-					cfg.Effort = parts[1]
-					_ = saveConfig(cfg)
-					fmt.Println(dim("effort -> ") + cfg.Effort)
-				} else {
-					fmt.Println(dim("effort is ") + cfg.Effort + dim(" (low|medium|high)"))
-				}
-			case "/perms":
-				for _, tool := range agentTools {
-					fmt.Printf("  %-10s %s\n", tool, permFor(cfg, tool))
-				}
-			case "/help":
-				fmt.Println("  " + bold("/effort [low|medium|high]") + dim("  reasoning effort"))
-				fmt.Println("  " + bold("/perms") + dim("                  tool permissions"))
-				fmt.Println("  " + bold("/quit") + dim("                   exit"))
-			default:
-				fmt.Println(dim("unknown command. /help for commands"))
 			}
 			continue
 		}
