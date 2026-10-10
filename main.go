@@ -473,7 +473,7 @@ var slashCommands = []slashCommand{
 }
 
 func slashMatches(line string) []slashCommand {
-	text := strings.TrimSpace(line)
+	text := strings.TrimLeft(line, " \t")
 	if !strings.HasPrefix(text, "/") {
 		return nil
 	}
@@ -481,14 +481,120 @@ func slashMatches(line string) []slashCommand {
 	if len(fields) == 0 {
 		return nil
 	}
-	query := strings.ToLower(fields[0])
-	matches := make([]slashCommand, 0, len(slashCommands))
-	for _, command := range slashCommands {
-		if query == "/" || strings.HasPrefix(command.Name, query) {
-			matches = append(matches, command)
+	query := strings.ToLower(strings.TrimPrefix(fields[0], "/"))
+	if query == "" {
+		return append([]slashCommand(nil), slashCommands[:4]...)
+	}
+	if len(fields) > 1 {
+		for _, command := range slashCommands {
+			if fields[0] == command.Name {
+				return nil
+			}
 		}
 	}
+	prefixMatches := make([]slashCommand, 0, 4)
+	for _, command := range slashCommands {
+		if strings.HasPrefix(strings.TrimPrefix(command.Name, "/"), query) {
+			prefixMatches = append(prefixMatches, command)
+		}
+	}
+	if len(prefixMatches) > 0 {
+		if len(prefixMatches) > 4 {
+			prefixMatches = prefixMatches[:4]
+		}
+		return prefixMatches
+	}
+	type rankedCommand struct {
+		command slashCommand
+		score   int
+		order   int
+	}
+	ranked := make([]rankedCommand, 0, len(slashCommands))
+	for index, command := range slashCommands {
+		name := strings.TrimPrefix(command.Name, "/")
+		ranked = append(ranked, rankedCommand{command: command, score: slashMatchScore(query, name), order: index})
+	}
+	for i := 0; i < len(ranked); i++ {
+		for j := i + 1; j < len(ranked); j++ {
+			if ranked[j].score > ranked[i].score || ranked[j].score == ranked[i].score && ranked[j].order < ranked[i].order {
+				ranked[i], ranked[j] = ranked[j], ranked[i]
+			}
+		}
+	}
+	count := 4
+	if len(ranked) < count {
+		count = len(ranked)
+	}
+	matches := make([]slashCommand, 0, count)
+	for _, candidate := range ranked[:count] {
+		matches = append(matches, candidate.command)
+	}
 	return matches
+}
+
+func slashMatchScore(query string, name string) int {
+	if name == query {
+		return 10000
+	}
+	if strings.HasPrefix(name, query) {
+		return 8000 - len(name)
+	}
+	if strings.Contains(name, query) {
+		return 6000 - len(name)
+	}
+	score := 0
+	queryIndex := 0
+	for index, char := range name {
+		if queryIndex < len(query) && byte(char) == query[queryIndex] {
+			score += 100 - index
+			queryIndex++
+		}
+	}
+	if queryIndex == len(query) {
+		return 4000 + score - len(name)
+	}
+	distance, prefixLength := slashPrefixDistance(query, name)
+	return 2000 - distance*100 - slashAbs(len(query)-prefixLength)*10 - len(name)
+}
+
+func slashAbs(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
+}
+
+func slashPrefixDistance(query string, name string) (int, int) {
+	bestDistance := len(query) + len(name)
+	bestLength := 0
+	for length := 1; length <= len(name); length++ {
+		distance := slashEditDistance(query, name[:length])
+		if distance < bestDistance || distance == bestDistance && slashAbs(len(query)-length) < slashAbs(len(query)-bestLength) {
+			bestDistance = distance
+			bestLength = length
+		}
+	}
+	return bestDistance, bestLength
+}
+
+func slashEditDistance(left string, right string) int {
+	previous := make([]int, len(right)+1)
+	for j := range previous {
+		previous[j] = j
+	}
+	for i := 1; i <= len(left); i++ {
+		current := make([]int, len(right)+1)
+		current[0] = i
+		for j := 1; j <= len(right); j++ {
+			cost := 1
+			if left[i-1] == right[j-1] {
+				cost = 0
+			}
+			current[j] = min(current[j-1]+1, min(previous[j]+1, previous[j-1]+cost))
+		}
+		previous = current
+	}
+	return previous[len(right)]
 }
 
 func slashPrompt(line string) string {
@@ -497,22 +603,16 @@ func slashPrompt(line string) string {
 		return "❯ "
 	}
 	var b strings.Builder
-	if len(matches) == 0 {
-		b.WriteString("  no matching commands\n")
-	}
-	visible := matches
-	if len(visible) > 4 {
-		visible = visible[:4]
-	}
-	for _, command := range visible {
+	for _, command := range matches {
 		fmt.Fprintf(&b, "  %-14s %s\n", command.Name, command.Description)
 	}
-	for i := len(visible); i < 4; i++ {
+	for i := len(matches); i < 4; i++ {
 		b.WriteString("\n")
 	}
 	b.WriteString("❯ ")
 	return b.String()
 }
+
 func slashMenu() {
 	fmt.Println(bold("Commands"))
 	fmt.Println("  /project <name|id>       switch the active project")
