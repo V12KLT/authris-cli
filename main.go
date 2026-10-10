@@ -432,21 +432,52 @@ func printKeySystemHeader(creds credentials, selected string) {
 			}
 		}
 	}
+	cwd, _ := os.Getwd()
 	fmt.Println()
-	fmt.Println(bold(cyan("Authris key system")))
-	fmt.Printf("%s %s  ·  %s %d\n", dim("account"), username, dim("projects"), len(list.Projects))
+	fmt.Printf("%s %s\n", bold(cyan("╭─ Authris CLI")), dim("v"+cliVersion))
+	fmt.Printf("%s %s  %s\n", cyan("│"), dim("account"), bold(username))
+	fmt.Printf("%s %s  %d\n", cyan("│"), dim("projects"), len(list.Projects))
+	projectFound := false
 	for _, p := range list.Projects {
-		if selected == "" || selected == p.ID || selected == p.Name {
-			fmt.Printf("%s %s  ·  %d keys  ·  %d active\n", dim("project"), p.Name, p.Total, p.Active)
+		if selected != "" && (selected == p.ID || selected == p.Name) {
+			fmt.Printf("%s %s  %s\n", cyan("│"), dim("project"), bold(p.Name))
+			fmt.Printf("%s %d keys  ·  %d active\n", cyan("│"), p.Total, p.Active)
+			projectFound = true
 			break
 		}
 	}
-	fmt.Println()
+	if !projectFound {
+		fmt.Printf("%s %s\n", cyan("│"), dim("no project selected · use /project"))
+	}
+	fmt.Printf("%s %s  %s\n", cyan("│"), dim("workspace"), dim(cwd))
+	fmt.Printf("%s %s\n\n", bold(cyan("╰─")), dim("Key system assistant · / for commands · /help for help"))
 }
 
 type slashCommand struct {
 	Name        string
 	Description string
+}
+
+type slashCommandPainter struct{}
+
+func (slashCommandPainter) Paint(line []rune, pos int) []rune {
+	if !colorsOn || len(line) == 0 || line[0] != '/' {
+		return line
+	}
+	end := 0
+	for end < len(line) && !strings.ContainsRune(" \t\r\n", line[end]) {
+		end++
+	}
+	styled := make([]rune, 0, len(line)+16)
+	styled = append(styled, []rune("\x1b[1;35m")...)
+	styled = append(styled, line[:end]...)
+	styled = append(styled, []rune("\x1b[0m")...)
+	styled = append(styled, line[end:]...)
+	return styled
+}
+
+func inputPrompt() string {
+	return cyan("❯") + " "
 }
 
 var slashCommands = []slashCommand{
@@ -604,12 +635,12 @@ func slashPrompt(line string) string {
 	}
 	var b strings.Builder
 	for _, command := range matches {
-		fmt.Fprintf(&b, "  %-14s %s\n", command.Name, command.Description)
+		fmt.Fprintf(&b, "  %s  %s\n", bold(cyan(command.Name)), dim(command.Description))
 	}
 	for i := len(matches); i < 4; i++ {
 		b.WriteString("\n")
 	}
-	b.WriteString("❯ ")
+	b.WriteString(inputPrompt())
 	return b.String()
 }
 
@@ -834,6 +865,7 @@ func printChatReply(payload map[string]any, announced *bool) []map[string]any {
 		*announced = true
 	}
 	if reply, _ := payload["reply"].(string); strings.TrimSpace(reply) != "" {
+		fmt.Printf("%s %s\n", bold(cyan("✦")), bold("Authris"))
 		fmt.Println(renderMarkdown(strings.TrimSpace(reply)))
 		fmt.Println()
 	}
@@ -943,7 +975,8 @@ func cmdAI(args []string) int {
 	var rl *readline.Instance
 	readLine := func() (string, error) { return reader.ReadString('\n') }
 	readlineConfig := &readline.Config{
-		Prompt:      "❯ ",
+		Prompt:      inputPrompt(),
+		Painter:     slashCommandPainter{},
 		HistoryFile: filepath.Join(filepath.Dir(credPath()), "history"),
 	}
 	readlineConfig.SetListener(func(line []rune, pos int, key rune) ([]rune, int, bool) {
@@ -1082,15 +1115,11 @@ func cmdAI(args []string) int {
 	if len(prompt) > 0 {
 		return round(strings.Join(prompt, " "))
 	}
-	cwd, _ := os.Getwd()
-	fmt.Println()
-	fmt.Printf("  %s %s\n", bold("✻ authris key installer"), dim("v"+cliVersion))
-	fmt.Printf("  %s\n", dim(cwd))
-	fmt.Printf("  %s\n", dim("effort "+cfg.Effort+" · /help for commands · empty line quits"))
+	fmt.Printf("%s\n", dim("effort "+cfg.Effort+" · enter a message to implement the key system · /help for commands"))
 	fmt.Println()
 	for {
 		if rl == nil {
-			fmt.Print(bold(cyan("❯") + " "))
+			fmt.Print(inputPrompt())
 		}
 		line, err := readLine()
 		if err != nil {
@@ -1099,7 +1128,7 @@ func cmdAI(args []string) int {
 		}
 		line = strings.TrimSpace(line)
 		if rl != nil {
-			rl.SetPrompt("❯ ")
+			rl.SetPrompt(inputPrompt())
 		}
 		if line == "" {
 			return 0

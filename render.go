@@ -28,6 +28,12 @@ func initColors() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
 	}
+	if force := strings.TrimSpace(os.Getenv("FORCE_COLOR")); force != "" && force != "0" && force != "false" {
+		if runtime.GOOS == "windows" {
+			enableVirtualTerminal()
+		}
+		return true
+	}
 	if os.Getenv("TERM") == "dumb" {
 		return false
 	}
