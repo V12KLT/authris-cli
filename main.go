@@ -477,10 +477,14 @@ func slashMatches(line string) []slashCommand {
 	if !strings.HasPrefix(text, "/") {
 		return nil
 	}
-	query := strings.ToLower(strings.Fields(text)[0])
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return nil
+	}
+	query := strings.ToLower(fields[0])
 	matches := make([]slashCommand, 0, len(slashCommands))
 	for _, command := range slashCommands {
-		if query == "/" || strings.HasPrefix(command.Name, query) || strings.Contains(command.Name, query) {
+		if query == "/" || strings.HasPrefix(command.Name, query) {
 			matches = append(matches, command)
 		}
 	}
@@ -493,11 +497,18 @@ func slashPrompt(line string) string {
 		return "❯ "
 	}
 	var b strings.Builder
-	for _, command := range matches {
-		fmt.Fprintf(&b, "  %-14s %s\n", command.Name, command.Description)
-	}
 	if len(matches) == 0 {
 		b.WriteString("  no matching commands\n")
+	}
+	visible := matches
+	if len(visible) > 4 {
+		visible = visible[:4]
+	}
+	for _, command := range visible {
+		fmt.Fprintf(&b, "  %-14s %s\n", command.Name, command.Description)
+	}
+	for i := len(visible); i < 4; i++ {
+		b.WriteString("\n")
 	}
 	b.WriteString("❯ ")
 	return b.String()
