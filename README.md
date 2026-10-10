@@ -1,6 +1,6 @@
 # authris CLI
 
-Talk to your Authris server from a terminal, run the coding agent on your project, or bridge local-only AI agents to it over MCP (stdio). Standard library only, no dependencies. Account actions run on the server under your token; project file tools run locally in the directory you launch from, fenced in by permissions you control.
+Install and integrate the Authris key system from a terminal, or bridge local-only AI agents to it over MCP (stdio). Standard library only, no dependencies. Account actions run on the server under your token; project file tools run locally in the directory you launch from, fenced in by permissions you control.
 
 ## Install
 
@@ -40,11 +40,11 @@ Tokens come from Dashboard > AI Access > Personal tokens. They are stored with `
 
 ## Agent
 
-`authris ai` (or just `authris`) is a coding agent for your project. It reads
-and edits files where you run it, runs install and test commands, and manages
-your Authris account through the same assistant as the dashboard. Reads run
-freely and writes, edits, and commands run without asking unless you
-restrict them. It also runs your build and tests itself to verify changes.
+`authris ai` (or just `authris`) is a focused key-system installer. It reads
+and edits files where you run it, installs the Authris SDK, and runs focused
+build and test commands to verify licensing integration. It refuses unrelated
+coding and UI work. Reads run freely and writes, edits, and commands run
+without asking unless you restrict them.
 The first run asks you to accept the agent terms.
 
 ```
@@ -70,7 +70,8 @@ Settings live in `~/.config/authris/config.json` next to your login.
 
 ## Updates
 
-The CLI checks for a new release once a day and tells you when one lands:
+The CLI checks for a new release once a day and installs it automatically when
+automatic updates are enabled:
 
 ```
 authris update

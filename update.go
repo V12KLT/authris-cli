@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const cliVersion = "4.3.0"
+const cliVersion = "4.4.0"
 const cliRepo = "V12KLT/authris-cli"
 
 func parseTagVersion(tag string) []int {
@@ -120,7 +120,10 @@ func maybeNotifyUpdate(cfg *cliConfig) {
 	}
 	if newerThan(tag, cliVersion) {
 		cfg.UpdateAvailable = tag
-		fmt.Printf("update %s available (you have %s). Run `authris update`.\n", tag, cliVersion)
+		fmt.Printf("updating Authris CLI from %s to %s...\n", cliVersion, tag)
+		if cmdUpdate([]string{"--force"}) != 0 {
+			fmt.Printf("update %s is available (you have %s). Run `authris update`.\n", tag, cliVersion)
+		}
 	} else {
 		cfg.UpdateAvailable = ""
 	}

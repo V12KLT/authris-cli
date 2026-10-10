@@ -397,6 +397,51 @@ func defaultProject(creds credentials) string {
 	return ""
 }
 
+func printKeySystemHeader(creds credentials, selected string) {
+	text, err := callTool(creds, "list_projects", map[string]any{})
+	if err != nil {
+		return
+	}
+	var list struct {
+		Projects []struct {
+			ID     string `json:"project_id"`
+			Name   string `json:"name"`
+			Total  int    `json:"total_keys"`
+			Active int    `json:"active"`
+		} `json:"projects"`
+	}
+	if json.Unmarshal([]byte(text), &list) != nil {
+		return
+	}
+	username := "connected account"
+	if raw, err := rpc(creds.Server, creds.Token, 1, "resources/read", map[string]any{"uri": "authris://server-info"}); err == nil {
+		var resource struct {
+			Contents []struct {
+				Text string `json:"text"`
+			} `json:"contents"`
+		}
+		if json.Unmarshal(raw, &resource) == nil && len(resource.Contents) > 0 {
+			var info struct {
+				User string `json:"username"`
+			}
+			_ = json.Unmarshal([]byte(resource.Contents[0].Text), &info)
+			if info.User != "" {
+				username = info.User
+			}
+		}
+	}
+	fmt.Println()
+	fmt.Println(bold(cyan("Authris key system")))
+	fmt.Printf("%s %s  ·  %s %d\n", dim("account"), username, dim("projects"), len(list.Projects))
+	for _, p := range list.Projects {
+		if selected == "" || selected == p.ID || selected == p.Name {
+			fmt.Printf("%s %s  ·  %d keys  ·  %d active\n", dim("project"), p.Name, p.Total, p.Active)
+			break
+		}
+	}
+	fmt.Println()
+}
+
 func printChatReply(payload map[string]any, announced *bool) []map[string]any {
 	if !*announced {
 		var scopes []string
@@ -519,6 +564,7 @@ func cmdAI(args []string) int {
 	if !checkTerms(&cfg, reader) {
 		return 1
 	}
+	printKeySystemHeader(creds, project)
 	var history []map[string]any
 	announced := false
 	grants := map[string]bool{}
@@ -645,7 +691,7 @@ func cmdAI(args []string) int {
 	}
 	cwd, _ := os.Getwd()
 	fmt.Println()
-	fmt.Printf("  %s %s\n", bold("✻ authris ai"), dim("v"+cliVersion))
+	fmt.Printf("  %s %s\n", bold("✻ authris key installer"), dim("v"+cliVersion))
 	fmt.Printf("  %s\n", dim(cwd))
 	fmt.Printf("  %s\n", dim("effort "+cfg.Effort+" · /help for commands · empty line quits"))
 	fmt.Println()
@@ -691,7 +737,7 @@ func cmdAI(args []string) int {
 }
 
 func usage() {
-	fmt.Println("authris - Authris AI control CLI")
+	fmt.Println("authris - Authris key-system installer")
 	fmt.Println()
 	fmt.Println("  authris                        start the AI chat")
 	fmt.Println("  authris ai [prompt]            chat with the built-in assistant")
