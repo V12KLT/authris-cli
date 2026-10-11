@@ -402,6 +402,7 @@ func defaultProject(creds credentials) string {
 func printKeySystemHeader(creds credentials, selected string) {
 	text, err := callTool(creds, "list_projects", map[string]any{})
 	if err != nil {
+		fmt.Println(red(err.Error()))
 		return
 	}
 	var list struct {
@@ -456,6 +457,19 @@ func printKeySystemHeader(creds credentials, selected string) {
 type slashCommand struct {
 	Name        string
 	Description string
+}
+
+type projectOption struct {
+	ID     string `json:"project_id"`
+	Name   string `json:"name"`
+	Total  int    `json:"total_keys"`
+	Active int    `json:"active"`
+}
+
+type projectPickerState struct {
+	active   bool
+	selected int
+	options  []projectOption
 }
 
 type slashCommandPainter struct{}
@@ -690,35 +704,85 @@ func slashMenu() {
 	fmt.Println("  /perms, /effort, /update, /help, /quit")
 }
 
-func slashProjects(creds credentials) {
+func fetchProjects(creds credentials) ([]projectOption, error) {
 	text, err := callTool(creds, "list_projects", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Projects []projectOption `json:"projects"`
+	}
+	if json.Unmarshal([]byte(text), &list) != nil {
+		return nil, fmt.Errorf("could not read projects")
+	}
+	return list.Projects, nil
+}
+
+func projectPickerPrompt(state *projectPickerState) string {
+	var b strings.Builder
+	b.WriteString("\n")
+	b.WriteString(bold("  Select a project"))
+	b.WriteString(dim(" · Up/Down to move · Enter to open"))
+	b.WriteString("\n\n")
+	for index, project := range state.options {
+		line := fmt.Sprintf("  %s  %s  ·  %d keys  ·  %d active", project.ID, project.Name, project.Total, project.Active)
+		if index == state.selected && colorsOn {
+			fmt.Fprintf(&b, "\x1b[48;5;236m%s\x1b[0m\n", line)
+		} else {
+			b.WriteString(line + "\n")
+		}
+	}
+	b.WriteString("\n")
+	b.WriteString(inputPrompt())
+	return b.String()
+}
+
+func slashProjects(creds credentials, readLine func() (string, error), rl *readline.Instance, project *string, picker *projectPickerState) {
+	projects, err := fetchProjects(creds)
 	if err != nil {
 		fmt.Println(red(err.Error()))
 		return
 	}
-	var list struct {
-		Projects []struct {
-			ID     string `json:"project_id"`
-			Name   string `json:"name"`
-			Total  int    `json:"total_keys"`
-			Active int    `json:"active"`
-		} `json:"projects"`
-	}
-	if json.Unmarshal([]byte(text), &list) != nil {
-		fmt.Println(red("could not read projects"))
+	if len(projects) == 0 {
+		fmt.Println("no projects")
 		return
 	}
-	for _, p := range list.Projects {
-		fmt.Printf("  %s  %s  ·  %d keys  ·  %d active\n", p.ID, p.Name, p.Total, p.Active)
+	picker.options = projects
+	picker.selected = 0
+	picker.active = true
+	if rl != nil {
+		rl.SetPrompt(projectPickerPrompt(picker))
 	}
-	if len(list.Projects) == 0 {
-		fmt.Println("  no projects")
+	_, err = readLine()
+	picker.active = false
+	if rl != nil {
+		rl.SetPrompt(inputPrompt())
 	}
+	if err != nil {
+		fmt.Println(red("project picker: " + err.Error()))
+		return
+	}
+	if rl != nil {
+		rl.ClearPrompt()
+	}
+	chosen := picker.options[picker.selected]
+	*project = chosen.ID
+	fmt.Println("project -> " + chosen.Name)
 }
 
 func slashProject(creds credentials, args []string, project *string) {
 	if len(args) == 0 {
-		slashProjects(creds)
+		projects, err := fetchProjects(creds)
+		if err != nil {
+			fmt.Println(red(err.Error()))
+			return
+		}
+		for _, p := range projects {
+			fmt.Printf("  %s  %s  ·  %d keys  ·  %d active\n", p.ID, p.Name, p.Total, p.Active)
+		}
+		if len(projects) == 0 {
+			fmt.Println("  no projects")
+		}
 		return
 	}
 	text, err := callTool(creds, "list_projects", map[string]any{})
@@ -778,7 +842,7 @@ func slashWrite(readLine func() (string, error), creds credentials, name string,
 	fmt.Println(text)
 }
 
-func handleSlash(line string, readLine func() (string, error), creds credentials, project *string, cfg *cliConfig) bool {
+func handleSlash(line string, readLine func() (string, error), creds credentials, project *string, cfg *cliConfig, rl *readline.Instance, picker *projectPickerState) bool {
 	parts := strings.Fields(line)
 	if len(parts) == 0 {
 		slashMenu()
@@ -794,7 +858,7 @@ func handleSlash(line string, readLine func() (string, error), creds credentials
 	case "/project", "/use":
 		slashProject(creds, args, project)
 	case "/projects":
-		slashProjects(creds)
+		slashProjects(creds, readLine, rl, project, picker)
 	case "/keys":
 		slashRead(creds, "key_inventory", *project, map[string]any{})
 	case "/list-keys":
@@ -1002,6 +1066,7 @@ func cmdAI(args []string) int {
 	slashSelection := 0
 	slashSelectionLine := ""
 	slashPendingCommand := ""
+	picker := &projectPickerState{}
 	readLine := func() (string, error) { return reader.ReadString('\n') }
 	readlineConfig := &readline.Config{
 		Prompt:      inputPrompt(),
@@ -1009,6 +1074,23 @@ func cmdAI(args []string) int {
 		HistoryFile: filepath.Join(filepath.Dir(credPath()), "history"),
 	}
 	readlineConfig.FuncFilterInputRune = func(key rune) (rune, bool) {
+		if picker.active && (key == readline.CharPrev || key == readline.CharNext) {
+			if key == readline.CharPrev {
+				picker.selected--
+				if picker.selected < 0 {
+					picker.selected = len(picker.options) - 1
+				}
+			} else {
+				picker.selected++
+				if picker.selected >= len(picker.options) {
+					picker.selected = 0
+				}
+			}
+			if rl != nil {
+				rl.SetPrompt(projectPickerPrompt(picker))
+			}
+			return 0, false
+		}
 		if key != readline.CharPrev && key != readline.CharNext {
 			return key, true
 		}
@@ -1034,6 +1116,12 @@ func cmdAI(args []string) int {
 		return 0, false
 	}
 	readlineConfig.SetListener(func(line []rune, pos int, key rune) ([]rune, int, bool) {
+		if picker.active {
+			if rl != nil {
+				rl.SetPrompt(projectPickerPrompt(picker))
+			}
+			return line, pos, true
+		}
 		lineText := string(line)
 		if lineText != slashSelectionLine {
 			slashSelection = 0
@@ -1201,7 +1289,7 @@ func cmdAI(args []string) int {
 			return 0
 		}
 		if strings.HasPrefix(line, "/") {
-			if handleSlash(line, readLine, creds, &project, &cfg) {
+			if handleSlash(line, readLine, creds, &project, &cfg, rl, picker) {
 				return 0
 			}
 			continue

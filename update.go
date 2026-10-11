@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const cliVersion = "4.4.13"
+const cliVersion = "4.4.14"
 const cliRepo = "V12KLT/authris-cli"
 
 func parseTagVersion(tag string) []int {
