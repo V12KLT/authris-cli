@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -63,6 +64,45 @@ func insideRoot(path string) (string, error) {
 func toolString(args map[string]any, key string) string {
 	value, _ := args[key].(string)
 	return value
+}
+
+func toolInt(args map[string]any, def int, keys ...string) int {
+	for _, key := range keys {
+		for name, value := range args {
+			if !strings.EqualFold(name, key) {
+				continue
+			}
+			switch typed := value.(type) {
+			case float64:
+				return int(typed)
+			case int:
+				return typed
+			case string:
+				if n, err := strconv.Atoi(strings.TrimSpace(typed)); err == nil {
+					return n
+				}
+			}
+		}
+	}
+	return def
+}
+
+func toolBool(args map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		for name, value := range args {
+			if !strings.EqualFold(name, key) {
+				continue
+			}
+			switch typed := value.(type) {
+			case bool:
+				return typed
+			case string:
+				text := strings.ToLower(strings.TrimSpace(typed))
+				return text == "true" || text == "1" || text == "yes"
+			}
+		}
+	}
+	return false
 }
 
 func toolArg(args map[string]any, keys ...string) string {
@@ -142,7 +182,7 @@ func toolFSRead(args map[string]any) (string, error) {
 		return "", err
 	}
 	if info.IsDir() {
-		return "", fmt.Errorf("is a directory")
+		return toolFSList(args)
 	}
 	if info.Size() > 256*1024 {
 		return "", fmt.Errorf("file too large")
@@ -151,11 +191,40 @@ func toolFSRead(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text := string(raw)
-	if len(text) > 64*1024 {
-		text = text[:64*1024] + "\n(truncated)"
+	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
 	}
-	return text, nil
+	offset := toolInt(args, 1, "offset", "start", "from")
+	if offset < 1 {
+		offset = 1
+	}
+	limit := toolInt(args, 2000, "limit", "count", "lines")
+	if limit < 1 {
+		limit = 2000
+	}
+	start := offset - 1
+	if start > len(lines) {
+		return "", fmt.Errorf("offset %d is past the end of %s (%d lines)", offset, path, len(lines))
+	}
+	end := start + limit
+	if end > len(lines) {
+		end = len(lines)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Read file %s, lines %d-%d\n", path, start+1, end)
+	for i := start; i < end; i++ {
+		fmt.Fprintf(&b, "%d: %s\n", i+1, lines[i])
+	}
+	if end < len(lines) {
+		fmt.Fprintf(&b, "[Output truncated. Continue reading with offset: %d]\n", end+1)
+	}
+	out := b.String()
+	if len(out) > 64*1024 {
+		out = out[:64*1024] + "\n(truncated)"
+	}
+	return out, nil
 }
 
 func toolFSWrite(args map[string]any) (string, error) {
@@ -183,11 +252,15 @@ func toolFSWrite(args map[string]any) (string, error) {
 
 func toolFSEdit(args map[string]any) (string, error) {
 	path := strings.TrimSpace(toolPath(args))
-	oldText := toolArg(args, "old_text", "old", "find", "search")
-	newText := toolArg(args, "new_text", "new", "replace", "replacement")
+	oldText := toolArg(args, "old_text", "old", "old_string", "oldString", "find", "search")
+	newText := toolArg(args, "new_text", "new", "new_string", "newString", "replace", "replacement")
 	if path == "" || oldText == "" {
 		return "", fmt.Errorf("path and old_text are required (got: %s)", argKeys(args))
 	}
+	if oldText == newText {
+		return "", fmt.Errorf("no changes to apply: old_text and new_text are identical")
+	}
+	replaceAll := toolBool(args, "replace_all", "replaceAll", "all")
 	full, err := insideRoot(path)
 	if err != nil {
 		return "", err
@@ -196,15 +269,27 @@ func toolFSEdit(args map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if strings.Count(string(raw), oldText) != 1 {
-		return "", fmt.Errorf("match is not unique")
+	content := strings.ReplaceAll(string(raw), "\r\n", "\n")
+	oldText = strings.ReplaceAll(oldText, "\r\n", "\n")
+	newText = strings.ReplaceAll(newText, "\r\n", "\n")
+	count := strings.Count(content, oldText)
+	if count == 0 {
+		return "", fmt.Errorf("could not find old_text in %s; it must match exactly, including whitespace and indentation", path)
 	}
-	updated := strings.Replace(string(raw), oldText, newText, 1)
+	if count > 1 && !replaceAll {
+		return "", fmt.Errorf("found %d matches for old_text in %s, but expected exactly one; add more surrounding context or set replace_all", count, path)
+	}
+	updated := strings.Replace(content, oldText, newText, 1)
+	replaced := 1
+	if replaceAll {
+		updated = strings.ReplaceAll(content, oldText, newText)
+		replaced = count
+	}
 	if err := os.WriteFile(full, []byte(updated), 0o644); err != nil {
 		return "", err
 	}
 	rel, _ := filepath.Rel(agentRoot, full)
-	return "edited " + rel, nil
+	return fmt.Sprintf("edited %s (%d replacement(s))", rel, replaced), nil
 }
 
 func toolExec(args map[string]any) (string, error) {

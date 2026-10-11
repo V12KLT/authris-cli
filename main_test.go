@@ -102,13 +102,13 @@ func TestToolArgAliases(t *testing.T) {
 	if _, err := runLocalTool("fs_write", map[string]any{"file": "a.txt", "text": "hello"}); err != nil {
 		t.Fatalf("write with aliases = %v", err)
 	}
-	if out, err := runLocalTool("fs_read", map[string]any{"FileName": "a.txt"}); err != nil || out != "hello" {
+	if out, err := runLocalTool("fs_read", map[string]any{"FileName": "a.txt"}); err != nil || !strings.Contains(out, "1: hello") {
 		t.Fatalf("read with alias = %q %v", out, err)
 	}
 	if _, err := runLocalTool("fs_edit", map[string]any{"PATH": "a.txt", "old": "hello", "new": "bye"}); err != nil {
 		t.Fatalf("edit with aliases = %v", err)
 	}
-	if out, err := runLocalTool("fs_read", map[string]any{"path": "a.txt"}); err != nil || out != "bye" {
+	if out, err := runLocalTool("fs_read", map[string]any{"path": "a.txt"}); err != nil || !strings.Contains(out, "1: bye") {
 		t.Fatalf("read after edit = %q %v", out, err)
 	}
 	if _, err := runLocalTool("fs_write", map[string]any{"content": "x"}); err == nil {
