@@ -1186,7 +1186,7 @@ func cmdAI(args []string) int {
 					if entry["ok"] != true {
 						status = "failed"
 						if result, _ := entry["result"].(string); strings.TrimSpace(result) != "" {
-							detail = ": " + snippet(result, 200)
+							detail = ": " + snippet(result, 1500)
 						}
 					}
 					note("server %s: %s%s", name, status, detail)
@@ -1222,11 +1222,11 @@ func cmdAI(args []string) int {
 					output, err := runLocalTool(name, callArgs)
 					if err != nil {
 						fmt.Printf("  %s %s\n", red("⎿"), err.Error())
-						note("%s failed: %s", summary, snippet(err.Error(), 200))
+						note("%s failed: %s", summary, snippet(err.Error(), 1500))
 						results = append(results, map[string]any{"id": id, "error": err.Error()})
 						continue
 					}
-					note("%s done: %s", summary, snippet(output, 200))
+					note("%s done: %s", summary, snippet(output, 1500))
 					fmt.Printf("  %s\n", green("⎿ done"))
 					results = append(results, map[string]any{"id": id, "output": output})
 				}
