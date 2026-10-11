@@ -153,6 +153,25 @@ func TestSnippet(t *testing.T) {
 	}
 }
 
+func TestToolPreviewRead(t *testing.T) {
+	agentRoot = t.TempDir()
+	defer func() { agentRoot = "" }()
+	out := "Read file main.py, lines 1-3\n1: import sys\n2: def main():\n3:     print(\"hi\")\n"
+	preview := toolPreview("fs_read", map[string]any{"path": "main.py"}, out)
+	for _, want := range []string{"┌─ main.py", "1: import sys", "2: def main():", "└─"} {
+		if !strings.Contains(preview, want) {
+			t.Fatalf("preview missing %q in %q", want, preview)
+		}
+	}
+}
+
+func TestToolPreviewEdit(t *testing.T) {
+	preview := toolPreview("fs_edit", map[string]any{"path": "a.py", "old_text": "x = 1", "new_text": "x = 2"}, "edited a.py (1 replacement(s))")
+	if !strings.Contains(preview, "- x = 1") || !strings.Contains(preview, "+ x = 2") || !strings.Contains(preview, "┌─ a.py") {
+		t.Fatalf("edit preview = %q", preview)
+	}
+}
+
 func TestValidEffort(t *testing.T) {
 	for _, level := range []string{"low", "medium", "high"} {
 		if !validEffort(level) {

@@ -226,6 +226,146 @@ func renderMarkdown(text string) string {
 	return strings.Join(out, "\n")
 }
 
+// takeLines splits text into at most limit lines, reporting whether it was
+// truncated and how many lines there were in total.
+func takeLines(text string, limit int) ([]string, bool, int) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) == 1 && strings.TrimSpace(lines[0]) == "" {
+		return nil, false, 0
+	}
+	total := len(lines)
+	if total > limit {
+		return lines[:limit], true, total
+	}
+	return lines, false, total
+}
+
+// highlightCode gives code a bit of colour: whole-line comments dim, and
+// quoted strings cyan. It is intentionally lightweight.
+func highlightCode(line string) string {
+	if !colorsOn {
+		return line
+	}
+	trimmed := strings.TrimSpace(line)
+	for _, marker := range []string{"#", "//", "--", "/*", "*", ";"} {
+		if strings.HasPrefix(trimmed, marker) {
+			return dim(line)
+		}
+	}
+	var b strings.Builder
+	i := 0
+	for i < len(line) {
+		c := line[i]
+		if c == '"' || c == '\'' || c == '`' {
+			quote := c
+			j := i + 1
+			for j < len(line) {
+				if line[j] == '\\' {
+					j += 2
+					continue
+				}
+				if line[j] == quote {
+					j++
+					break
+				}
+				j++
+			}
+			if j > len(line) {
+				j = len(line)
+			}
+			b.WriteString(cyan(line[i:j]))
+			i = j
+			continue
+		}
+		b.WriteByte(c)
+		i++
+	}
+	return b.String()
+}
+
+// codeBlock renders lines as a bordered, code-like block with a gutter.
+func codeBlock(label string, lines []string, truncated bool, total int) string {
+	if label == "" {
+		label = "output"
+	}
+	var b strings.Builder
+	b.WriteString("  " + dim("┌─ "+label))
+	for _, line := range lines {
+		b.WriteString("\n  " + dim("│ ") + line)
+	}
+	if truncated && total > len(lines) {
+		b.WriteString("\n  " + dim("│ ") + dim(fmt.Sprintf("… %d more lines", total-len(lines))))
+	}
+	b.WriteString("\n  " + dim("└─"))
+	return b.String()
+}
+
+func stripReadHeader(output string) string {
+	if strings.HasPrefix(output, "Read file ") {
+		if idx := strings.IndexByte(output, '\n'); idx >= 0 {
+			return output[idx+1:]
+		}
+	}
+	return output
+}
+
+// toolPreview renders a short, code-styled excerpt of what a local tool did:
+// the lines it read, or the +/- lines an edit or write changed.
+func toolPreview(name string, args map[string]any, output string) string {
+	switch name {
+	case "fs_read":
+		lines, truncated, total := takeLines(stripReadHeader(output), 16)
+		styled := make([]string, len(lines))
+		for i, line := range lines {
+			styled[i] = highlightCode(line)
+		}
+		return codeBlock(toolPath(args), styled, truncated, total)
+	case "fs_list":
+		lines, truncated, total := takeLines(output, 18)
+		return codeBlock(toolPath(args)+"/", lines, truncated, total)
+	case "fs_write":
+		raw, truncated, total := takeLines(toolArg(args, "content", "text", "data", "body"), 16)
+		lines := make([]string, len(raw))
+		for i, line := range raw {
+			lines[i] = green("+") + " " + highlightCode(line)
+		}
+		return codeBlock(toolPath(args), lines, truncated, total)
+	case "fs_edit":
+		oldText := toolArg(args, "old_text", "old", "old_string", "oldString", "find", "search")
+		newText := toolArg(args, "new_text", "new", "new_string", "newString", "replace", "replacement")
+		oldLines, _, _ := takeLines(oldText, 40)
+		newLines, _, _ := takeLines(newText, 40)
+		var lines []string
+		for _, line := range oldLines {
+			lines = append(lines, red("-")+" "+cleanDiffLine(line))
+		}
+		for _, line := range newLines {
+			lines = append(lines, green("+")+" "+cleanDiffLine(line))
+		}
+		truncated := false
+		total := len(lines)
+		if total > 20 {
+			lines = lines[:20]
+			truncated = true
+		}
+		return codeBlock(toolPath(args), lines, truncated, total)
+	case "exec":
+		lines, truncated, total := takeLines(output, 12)
+		styled := make([]string, len(lines))
+		for i, line := range lines {
+			styled[i] = highlightCode(line)
+		}
+		return codeBlock(strings.Join([]string{"$", toolArg(args, "command", "cmd", "script")}, " "), styled, truncated, total)
+	}
+	return ""
+}
+
+// cleanDiffLine drops a trailing carriage return so diff markers line up.
+func cleanDiffLine(line string) string {
+	return strings.TrimRight(line, "\r")
+}
+
 func startSpinner(label string) func() {
 	noop := func() {}
 	if !colorsOn {

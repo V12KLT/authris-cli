@@ -1227,7 +1227,11 @@ func cmdAI(args []string) int {
 						continue
 					}
 					note("%s done: %s", summary, snippet(output, 1500))
-					fmt.Printf("  %s\n", green("⎿ done"))
+					if preview := toolPreview(name, callArgs, output); preview != "" {
+						fmt.Println(preview)
+					} else {
+						fmt.Printf("  %s\n", green("⎿ done"))
+					}
 					results = append(results, map[string]any{"id": id, "output": output})
 				}
 			}
