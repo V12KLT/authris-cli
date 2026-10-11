@@ -352,7 +352,7 @@ func chatRequest(creds credentials, payload map[string]any) (map[string]any, err
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+creds.Token)
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 600 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1161,7 +1161,7 @@ func cmdAI(args []string) int {
 			"project": project, "message": message, "history": history,
 			"local_tools": true, "effort": cfg.Effort,
 		}
-		for step := 0; step < 25; step++ {
+		for step := 0; step < 60; step++ {
 			label := "Thinking"
 			if step > 0 {
 				label = fmt.Sprintf("Working · step %d", step+1)
@@ -1257,7 +1257,7 @@ func cmdAI(args []string) int {
 				payload["approvals"] = decided
 			}
 		}
-		fmt.Println("stopped after 25 steps")
+		fmt.Println("stopped after 60 steps")
 		return 0
 	}
 	if len(prompt) > 0 {
