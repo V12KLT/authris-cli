@@ -1126,6 +1126,9 @@ func cmdAI(args []string) int {
 			fmt.Println()
 			return 0
 		}
+		if rl != nil {
+			rl.ClearPrompt()
+		}
 		line = strings.TrimSpace(line)
 		if rl != nil {
 			rl.SetPrompt(inputPrompt())

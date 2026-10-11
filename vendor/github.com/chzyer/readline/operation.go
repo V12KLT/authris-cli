@@ -93,6 +93,12 @@ func (o *Operation) SetPrompt(s string) {
 	o.buf.SetPrompt(s)
 }
 
+func (o *Operation) ClearPrompt() {
+	o.m.Lock()
+	o.buf.ClearPrompt()
+	o.m.Unlock()
+}
+
 func (o *Operation) SetMaskRune(r rune) {
 	o.buf.SetMask(r)
 }

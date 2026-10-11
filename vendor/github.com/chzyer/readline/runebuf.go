@@ -636,6 +636,16 @@ func (r *RuneBuffer) Clean() {
 	r.Unlock()
 }
 
+func (r *RuneBuffer) ClearPrompt() {
+	r.Lock()
+	if r.interactive {
+		r.cleanOutput(r.w, r.idxLine(r.width)+1)
+	}
+	r.lastPromptLines = 0
+	r.hadClean = true
+	r.Unlock()
+}
+
 func (r *RuneBuffer) clean() {
 	r.cleanWithIdxLine(r.idxLine(r.width))
 }
