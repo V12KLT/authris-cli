@@ -24,6 +24,19 @@ const (
 
 var colorsOn = initColors()
 
+// selectionHighlight is the ANSI SGR prefix used to highlight the active row in
+// slash-command and project pickers. Windows' legacy console ANSI parser (used by
+// the vendored readline) only understands the basic 30-37/40-47 colors, so we fall
+// back to a plain black-on-white highlight there instead of the 256-color variant.
+var selectionHighlight = initSelectionHighlight()
+
+func initSelectionHighlight() string {
+	if runtime.GOOS == "windows" {
+		return "\x1b[30;47m"
+	}
+	return "\x1b[48;5;236m"
+}
+
 func initColors() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false

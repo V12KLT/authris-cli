@@ -657,7 +657,7 @@ func slashPromptSelected(line string, selected int) string {
 	var b strings.Builder
 	for index, command := range matches {
 		if index == selected && colorsOn {
-			fmt.Fprintf(&b, "  \x1b[48;5;236m%s  %s\x1b[0m\n", bold(cyan(command.Name)), dim(command.Description))
+			fmt.Fprintf(&b, "  %s%s  %s\x1b[0m\n", selectionHighlight, bold(cyan(command.Name)), dim(command.Description))
 		} else {
 			fmt.Fprintf(&b, "  %s  %s\n", bold(cyan(command.Name)), dim(command.Description))
 		}
@@ -727,7 +727,7 @@ func projectPickerPrompt(state *projectPickerState) string {
 	for index, project := range state.options {
 		line := fmt.Sprintf("  %s  %s  ·  %d keys  ·  %d active", project.ID, project.Name, project.Total, project.Active)
 		if index == state.selected && colorsOn {
-			fmt.Fprintf(&b, "\x1b[48;5;236m%s\x1b[0m\n", line)
+			fmt.Fprintf(&b, "%s%s\x1b[0m\n", selectionHighlight, line)
 		} else {
 			b.WriteString(line + "\n")
 		}

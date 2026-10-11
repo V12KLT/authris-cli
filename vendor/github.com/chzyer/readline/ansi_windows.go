@@ -156,12 +156,17 @@ func (a *ANSIWriterCtx) ioloopEscSeq(w *bufio.Writer, r rune, argptr *[]string) 
 				w.WriteString("[" + strings.Join(arg, ";") + "m")
 				break
 			}
-			if c >= 30 && c < 40 {
+			if c >= 30 && c < 38 {
 				color ^= COLOR_FINTENSITY
 				color |= ColorTableFg[c-30]
-			} else if c >= 40 && c < 50 {
+			} else if c >= 40 && c < 48 {
 				color ^= COLOR_BINTENSITY
 				color |= ColorTableBg[c-40]
+			} else if c == 38 || c == 48 {
+				// 256-color / truecolor introducer: unsupported on Windows,
+				// ignore the extended parameters instead of indexing out of range.
+			} else if c == 39 || c == 49 {
+				// default foreground / background: leave unchanged.
 			} else if c == 4 {
 				color |= COMMON_LVB_UNDERSCORE | ColorTableFg[7]
 			} else if c == 1 {
