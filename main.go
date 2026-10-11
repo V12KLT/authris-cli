@@ -1173,11 +1173,14 @@ func cmdAI(args []string) int {
 				fmt.Println(red("✕ " + err.Error()))
 				return 1
 			}
-			if reply, _ := resp["reply"].(string); strings.TrimSpace(reply) != "" {
-				remember("assistant", reply)
+			replyText, _ := resp["reply"].(string)
+			if strings.TrimSpace(replyText) != "" {
+				remember("assistant", replyText)
 			}
+			executedCount := 0
 			proposals := printChatReply(resp, &announced)
 			if executedList, ok := resp["executed"].([]any); ok {
+				executedCount = len(executedList)
 				for _, item := range executedList {
 					entry, _ := item.(map[string]any)
 					name, _ := entry["name"].(string)
@@ -1250,7 +1253,12 @@ func cmdAI(args []string) int {
 				})
 			}
 			if len(pending) == 0 && len(decided) == 0 {
-				return 0
+				// The server may have run its own tools and stopped without a
+				// final answer (per-request step cap). Keep the round going so
+				// the model can continue instead of dropping back to the prompt.
+				if executedCount == 0 || strings.TrimSpace(replyText) != "" {
+					return 0
+				}
 			}
 			payload = map[string]any{
 				"project": project, "message": "", "history": history,
