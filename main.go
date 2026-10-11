@@ -629,19 +629,45 @@ func slashEditDistance(left string, right string) int {
 }
 
 func slashPrompt(line string) string {
+	return slashPromptSelected(line, 0)
+}
+
+func slashPromptSelected(line string, selected int) string {
 	matches := slashMatches(line)
 	if matches == nil {
-		return "❯ "
+		return inputPrompt()
+	}
+	if selected < 0 || selected >= len(matches) {
+		selected = 0
 	}
 	var b strings.Builder
-	for _, command := range matches {
-		fmt.Fprintf(&b, "  %s  %s\n", bold(cyan(command.Name)), dim(command.Description))
+	for index, command := range matches {
+		if index == selected && colorsOn {
+			fmt.Fprintf(&b, "  \x1b[48;5;236m%s  %s\x1b[0m\n", bold(cyan(command.Name)), dim(command.Description))
+		} else {
+			fmt.Fprintf(&b, "  %s  %s\n", bold(cyan(command.Name)), dim(command.Description))
+		}
 	}
 	for i := len(matches); i < 4; i++ {
 		b.WriteString("\n")
 	}
 	b.WriteString(inputPrompt())
 	return b.String()
+}
+
+func slashSelectedCommand(line string, selected int) string {
+	fields := strings.Fields(line)
+	if len(fields) != 1 || !strings.HasPrefix(strings.TrimSpace(line), "/") {
+		return line
+	}
+	matches := slashMatches(line)
+	if len(matches) == 0 {
+		return line
+	}
+	if selected < 0 || selected >= len(matches) {
+		selected = 0
+	}
+	return matches[selected].Name
 }
 
 func slashMenu() {
@@ -973,15 +999,49 @@ func cmdAI(args []string) int {
 		return 1
 	}
 	var rl *readline.Instance
+	slashSelection := 0
+	slashSelectionLine := ""
+	slashPendingCommand := ""
 	readLine := func() (string, error) { return reader.ReadString('\n') }
 	readlineConfig := &readline.Config{
 		Prompt:      inputPrompt(),
 		Painter:     slashCommandPainter{},
 		HistoryFile: filepath.Join(filepath.Dir(credPath()), "history"),
 	}
-	readlineConfig.SetListener(func(line []rune, pos int, key rune) ([]rune, int, bool) {
+	readlineConfig.FuncFilterInputRune = func(key rune) (rune, bool) {
+		if key != readline.CharPrev && key != readline.CharNext {
+			return key, true
+		}
+		matches := slashMatches(slashSelectionLine)
+		if len(matches) == 0 {
+			return key, true
+		}
+		if key == readline.CharPrev {
+			slashSelection--
+			if slashSelection < 0 {
+				slashSelection = len(matches) - 1
+			}
+		} else {
+			slashSelection++
+			if slashSelection >= len(matches) {
+				slashSelection = 0
+			}
+		}
 		if rl != nil {
-			rl.SetPrompt(slashPrompt(string(line)))
+			rl.SetPrompt(slashPromptSelected(slashSelectionLine, slashSelection))
+		}
+		slashPendingCommand = matches[slashSelection].Name
+		return 0, false
+	}
+	readlineConfig.SetListener(func(line []rune, pos int, key rune) ([]rune, int, bool) {
+		lineText := string(line)
+		if lineText != slashSelectionLine {
+			slashSelection = 0
+			slashPendingCommand = ""
+		}
+		slashSelectionLine = lineText
+		if rl != nil {
+			rl.SetPrompt(slashPromptSelected(lineText, slashSelection))
 		}
 		return line, pos, true
 	})
@@ -1130,6 +1190,10 @@ func cmdAI(args []string) int {
 			rl.ClearPrompt()
 		}
 		line = strings.TrimSpace(line)
+		if slashPendingCommand != "" && len(strings.Fields(line)) == 1 {
+			line = slashPendingCommand
+		}
+		line = slashSelectedCommand(line, slashSelection)
 		if rl != nil {
 			rl.SetPrompt(inputPrompt())
 		}
